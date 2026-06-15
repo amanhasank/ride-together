@@ -1,5 +1,6 @@
 'use client';
 
+import { track } from '@vercel/analytics';
 import { getSupabase } from './supabase';
 import {
   generateRideCode,
@@ -100,6 +101,7 @@ export async function createRide(input: CreateRideInput): Promise<Ride> {
       isLeader: true,
       leaderToken: res.leaderToken,
     });
+    track('ride_created', { mode: 'secure' });
     return rowToRide(res.ride);
   }
 
@@ -149,6 +151,7 @@ export async function createRide(input: CreateRideInput): Promise<Ride> {
     isLeader: true,
     leaderToken,
   });
+  track('ride_created', { mode: 'direct' });
   return rowToRide(ride);
 }
 
@@ -178,6 +181,7 @@ export async function joinRide(
       isLeader: false,
     };
     saveSession(input.rideId, session);
+    track('ride_joined', { mode: 'secure' });
     return { ride, session };
   }
 
@@ -211,6 +215,7 @@ export async function joinRide(
     isLeader: false,
   };
   saveSession(input.rideId, session);
+  track('ride_joined', { mode: 'direct' });
   return { ride, session };
 }
 

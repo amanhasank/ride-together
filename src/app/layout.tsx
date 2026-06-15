@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
+import { Analytics } from '@vercel/analytics/next';
 import { ThemeProvider } from '@/components/ThemeProvider';
 import { ServiceWorker } from '@/components/ServiceWorker';
 
@@ -39,6 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <ThemeProvider>{children}</ThemeProvider>
         <ServiceWorker />
+        <Analytics />
       </body>
     </html>
   );

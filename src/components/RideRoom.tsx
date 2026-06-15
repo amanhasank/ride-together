@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { track } from '@vercel/analytics';
 import { APIProvider } from '@vis.gl/react-google-maps';
 import type { Ride } from '@/lib/types';
 import type { RideSession } from '@/lib/session';
@@ -51,6 +52,15 @@ export function RideRoom({ rideId, initialRide, session, mapsKey }: Props) {
       (typeof window !== 'undefined' ? window.location.origin : '');
     return `${base}/ride/${rideId}`;
   }, [rideId]);
+
+  // Fire once when the rider first grants location — the key funnel step.
+  const trackedGrant = useRef(false);
+  useEffect(() => {
+    if (permission === 'granted' && !trackedGrant.current) {
+      trackedGrant.current = true;
+      track('location_shared', { role: session.isLeader ? 'leader' : 'rider' });
+    }
+  }, [permission, session.isLeader]);
 
   // Recover ride state on reconnect when the tab returns to foreground.
   useEffect(() => {
