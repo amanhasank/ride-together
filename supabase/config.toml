@@ -1,0 +1,14 @@
+# Supabase project config. Link with: supabase link --project-ref <your-ref>
+project_id = "ridetogether"
+
+# These functions are intentionally public (no user accounts). Authority is
+# enforced inside the functions via ride codes + leader_token, so we disable
+# the default JWT gate. Do NOT disable verify_jwt for functions that assume auth.
+[functions.create-ride]
+verify_jwt = false
+
+[functions.join-ride]
+verify_jwt = false
+
+[functions.ride-action]
+verify_jwt = false
