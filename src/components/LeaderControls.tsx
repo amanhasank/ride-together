@@ -5,7 +5,8 @@ import { BottomSheet } from './BottomSheet';
 import { DestinationSearch } from './DestinationSearch';
 import type { Ride, Waypoint } from '@/lib/types';
 import { endRide, updateRideConfig } from '@/lib/ride';
-import { Lock, Unlock, Power, Pencil, MapPin, Crosshair } from './icons';
+import { loadSession } from '@/lib/session';
+import { Lock, Unlock, Power, Pencil, MapPin, Crosshair, Copy, Check, Crown } from './icons';
 
 interface Props {
   open: boolean;
@@ -20,6 +21,27 @@ export function LeaderControls({ open, onClose, ride, onPickDestination, onEnded
   const [destLabel, setDestLabel] = useState(ride.dest_label ?? '');
   const [busy, setBusy] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
+  const [copiedLeader, setCopiedLeader] = useState(false);
+
+  // Private leader link — lets the leader regain control from another device.
+  const leaderToken = loadSession(ride.id)?.leaderToken;
+  const baseUrl =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    (typeof window !== 'undefined' ? window.location.origin : '');
+  const leaderLink = leaderToken
+    ? `${baseUrl}/ride/${ride.id}?leader=${leaderToken}`
+    : null;
+
+  const copyLeaderLink = async () => {
+    if (!leaderLink) return;
+    try {
+      await navigator.clipboard.writeText(leaderLink);
+      setCopiedLeader(true);
+      setTimeout(() => setCopiedLeader(false), 1800);
+    } catch {
+      /* clipboard blocked */
+    }
+  };
 
   const saveName = async () => {
     if (name.trim() && name !== ride.name) {
@@ -84,6 +106,29 @@ export function LeaderControls({ open, onClose, ride, onPickDestination, onEnded
             </button>
           </div>
         </div>
+
+        {leaderLink && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-900/50 dark:bg-amber-950/30">
+            <p className="flex items-center gap-1.5 text-sm font-medium text-amber-800 dark:text-amber-300">
+              <Crown width={15} height={15} /> Leader link (keep private)
+            </p>
+            <p className="mt-0.5 text-xs text-amber-700/80 dark:text-amber-300/70">
+              Save this to regain leader control from another device. Anyone with it becomes leader.
+            </p>
+            <div className="mt-2 flex items-center gap-2 rounded-lg bg-white px-3 py-2 dark:bg-slate-900">
+              <span className="flex-1 truncate text-xs text-slate-500 dark:text-slate-400">
+                {leaderLink}
+              </span>
+              <button
+                onClick={copyLeaderLink}
+                className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                aria-label="Copy leader link"
+              >
+                {copiedLeader ? <Check width={16} height={16} /> : <Copy width={16} height={16} />}
+              </button>
+            </div>
+          </div>
+        )}
 
         <div>
           <label className="mb-1.5 block text-sm font-medium">Destination</label>

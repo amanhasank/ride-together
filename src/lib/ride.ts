@@ -56,9 +56,14 @@ async function callEdge<T>(name: string, body: Record<string, unknown>): Promise
 }
 
 // ── Reads (always direct; RLS allows SELECT) ─────────────────────────────────
+// Explicit column list — deliberately EXCLUDES leader_token so the secret is
+// never shipped to clients via the open SELECT policy.
+const RIDE_COLS =
+  'id,name,description,status,dest_lat,dest_lng,dest_label,waypoints,created_at,ended_at';
+
 export async function getRide(rideId: string): Promise<Ride | null> {
   const sb = getSupabase();
-  const { data, error } = await sb.from('rides').select().eq('id', rideId).maybeSingle();
+  const { data, error } = await sb.from('rides').select(RIDE_COLS).eq('id', rideId).maybeSingle();
   if (error) throw error;
   return data ? rowToRide(data) : null;
 }
@@ -217,6 +222,75 @@ export async function joinRide(
   saveSession(input.rideId, session);
   track('ride_joined', { mode: 'direct' });
   return { ride, session };
+}
+
+// ── Leader recovery ──────────────────────────────────────────────────────────
+/**
+ * Re-establish leadership from another device using the secret leader token
+ * (delivered via the private "leader link"). Validates the token, then restores
+ * or creates a leader participant and persists a leader session locally.
+ */
+export async function claimLeader(rideId: string, leaderToken: string): Promise<RideSession> {
+  const sb = getSupabase();
+  const existing = loadSession(rideId);
+
+  if (SECURE_MODE) {
+    const res = await callEdge<{
+      participantId: string;
+      sessionToken: string;
+      name: string;
+      color: string;
+    }>('claim-leader', { rideId, leaderToken });
+    const session: RideSession = {
+      participantId: res.participantId,
+      sessionToken: res.sessionToken,
+      name: res.name,
+      color: res.color,
+      isLeader: true,
+      leaderToken,
+    };
+    saveSession(rideId, session);
+    return session;
+  }
+
+  // ── Direct path: verify the token WITHOUT exposing it (server-side filter) ──
+  const { data: match, error } = await sb
+    .from('rides')
+    .select('id')
+    .eq('id', rideId)
+    .eq('leader_token', leaderToken)
+    .maybeSingle();
+  if (error) throw error;
+  if (!match) throw new Error('Invalid or expired leader link.');
+
+  const name = existing?.name ?? 'Leader';
+  const color = existing?.color ?? '#2f7dff';
+  let participantId = existing?.participantId ?? '';
+  const sessionToken = existing?.sessionToken ?? randomToken();
+
+  if (participantId) {
+    // Promote the identity we already have on this device.
+    await sb.from('participants').update({ is_leader: true }).eq('id', participantId);
+  } else {
+    const { data: part, error: pErr } = await sb
+      .from('participants')
+      .insert({ ride_id: rideId, session_token: sessionToken, name, color, is_leader: true })
+      .select('id')
+      .single();
+    if (pErr) throw pErr;
+    participantId = part.id;
+  }
+
+  const session: RideSession = {
+    participantId,
+    sessionToken,
+    name,
+    color,
+    isLeader: true,
+    leaderToken,
+  };
+  saveSession(rideId, session);
+  return session;
 }
 
 // ── Self-service writes ────────────────────────────────────────────────────

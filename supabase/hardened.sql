@@ -27,6 +27,12 @@ create policy "participants readable" on public.participants for select using (t
 -- After this, the anon role can ONLY read. All writes go through service-role
 -- Edge Functions or the SECURITY DEFINER functions below.
 
+-- Hide the secret leader_token from client reads. The open SELECT policy would
+-- otherwise return every column; revoke column-level access so the token is
+-- only ever readable by the service role (Edge Functions). The client must
+-- select explicit columns (see RIDE_COLS in src/lib/ride.ts) — never SELECT *.
+revoke select (leader_token) on public.rides from anon, authenticated;
+
 -- ── 2. Ownership-checked self-service RPCs ──────────────────────────────────
 -- High-frequency location updates shouldn't pay Edge Function cold-start cost,
 -- so they run as security-definer functions that verify the caller owns the row

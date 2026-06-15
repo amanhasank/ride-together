@@ -16,7 +16,7 @@ import { InviteSheet } from './InviteSheet';
 import { LeaderControls } from './LeaderControls';
 import { EndedScreen } from './EndedScreen';
 import { ConnectionPill } from './StatusBadge';
-import { Users, Share, Crown, Crosshair, Navigation, MapPin, X } from './icons';
+import { Users, Share, Crown, Crosshair, Navigation, MapPin, X, Refresh } from './icons';
 
 interface Props {
   rideId: string;
@@ -36,12 +36,22 @@ export function RideRoom({ rideId, initialRide, session, mapsKey }: Props) {
   const [picking, setPicking] = useState(false);
 
   const { permission, fix, error: geoError, request } = useGeolocation({ minIntervalMs: 3000 });
-  const { ride, participants, conn, kicked, reconnect } = useRideChannel({
+  const { ride, participants, conn, kicked, reconnect, refresh } = useRideChannel({
     rideId,
     initialRide,
     session,
     selfFix: fix,
   });
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await refresh();
+    } finally {
+      setTimeout(() => setRefreshing(false), 500);
+    }
+  };
 
   const leader = participants.find((p) => p.isLeader);
   const followId = followLeader && leader && !session.isLeader ? leader.id : null;
@@ -143,6 +153,14 @@ export function RideRoom({ rideId, initialRide, session, mapsKey }: Props) {
 
       {/* Floating right controls */}
       <div className="absolute right-3 top-24 z-[600] flex flex-col gap-2">
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          className="grid h-11 w-11 place-items-center rounded-full bg-white text-slate-700 shadow-lg dark:bg-slate-800 dark:text-slate-200"
+          aria-label="Refresh riders"
+        >
+          <Refresh width={20} height={20} className={refreshing ? 'animate-spin' : ''} />
+        </button>
         <button
           onClick={() => setRecenter((n) => n + 1)}
           className="grid h-11 w-11 place-items-center rounded-full bg-white text-slate-700 shadow-lg dark:bg-slate-800 dark:text-slate-200"

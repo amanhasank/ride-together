@@ -30,7 +30,10 @@ export function useRideChannel({ rideId, initialRide, session, selfFix }: Args) 
   const [ride, setRide] = useState<Ride>(initialRide);
   const [rows, setRows] = useState<Record<string, ParticipantRow>>({});
   const [pings, setPings] = useState<Record<string, LocPing>>({});
-  const [online, setOnline] = useState<Set<string>>(new Set());
+  // Presence metadata keyed by participant id (also tells us who is online).
+  const [presence, setPresence] = useState<
+    Record<string, { name: string; color: string; isLeader: boolean }>
+  >({});
   const [conn, setConn] = useState<ConnState>('connecting');
   const [kicked, setKicked] = useState(false);
 
@@ -73,8 +76,17 @@ export function useRideChannel({ rideId, initialRide, session, selfFix }: Args) 
         if (payload?.id === session.participantId) setKicked(true);
       })
       .on('presence', { event: 'sync' }, () => {
-        const state = channel.presenceState();
-        setOnline(new Set(Object.keys(state)));
+        const state = channel.presenceState() as Record<string, any[]>;
+        const meta: Record<string, { name: string; color: string; isLeader: boolean }> = {};
+        for (const [key, entries] of Object.entries(state)) {
+          const e = entries[0] || {};
+          meta[key] = {
+            name: e.name ?? 'Rider',
+            color: e.color ?? '#2f7dff',
+            isLeader: !!e.isLeader,
+          };
+        }
+        setPresence(meta);
       })
       .on(
         'postgres_changes',
@@ -121,6 +133,7 @@ export function useRideChannel({ rideId, initialRide, session, selfFix }: Args) 
             id: session.participantId,
             name: session.name,
             color: session.color,
+            isLeader: session.isLeader,
           });
           void hydrate(); // catch anything missed while disconnected
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
@@ -136,7 +149,7 @@ export function useRideChannel({ rideId, initialRide, session, selfFix }: Args) 
       sb.removeChannel(channel);
       channelRef.current = null;
     };
-  }, [rideId, session.participantId, session.name, session.color, hydrate]);
+  }, [rideId, session.participantId, session.name, session.color, session.isLeader, hydrate]);
 
   // ── Broadcast our own location + periodically persist ─────────────────────
   const broadcast = useCallback(
@@ -173,34 +186,55 @@ export function useRideChannel({ rideId, initialRide, session, selfFix }: Args) 
     if (selfFix && !kicked && ride.status !== 'ended') broadcast(selfFix);
   }, [selfFix, kicked, ride.status, broadcast]);
 
-  // ── Merge rows + pings + presence into the live participant list ──────────
+  // ── Merge roster (DB) + presence + pings into the live participant list ────
+  // We render the UNION of all three sources, so a rider shows up the moment
+  // ANY signal arrives — even if the postgres_changes roster insert was missed.
   const participants = useMemo<Participant[]>(() => {
-    return Object.values(rows).map((row) => {
-      const ping = pings[row.id];
-      const rowSeen = new Date(row.last_seen).getTime();
-      const pingNewer = ping && ping.t >= rowSeen;
-      const lat = pingNewer ? ping!.lat : row.lat;
-      const lng = pingNewer ? ping!.lng : row.lng;
-      const lastSeen = Math.max(rowSeen || 0, ping?.t ?? 0);
-      return {
-        id: row.id,
-        name: row.name,
-        color: row.color,
-        isLeader: row.is_leader,
+    const ids = new Set<string>([
+      ...Object.keys(rows),
+      ...Object.keys(presence),
+      ...Object.keys(pings),
+    ]);
+
+    const list: Participant[] = [];
+    for (const id of ids) {
+      const row = rows[id];
+      const pres = presence[id];
+      const ping = pings[id];
+      // Skip ghost ids that have neither identity nor a position.
+      if (!row && !pres && !ping) continue;
+
+      const rowSeen = row ? new Date(row.last_seen).getTime() : 0;
+      const pingNewer = !!ping && ping.t >= rowSeen;
+      const lat = pingNewer ? ping!.lat : row?.lat ?? null;
+      const lng = pingNewer ? ping!.lng : row?.lng ?? null;
+      const lastSeen = Math.max(rowSeen, ping?.t ?? 0);
+
+      list.push({
+        id,
+        name: row?.name ?? pres?.name ?? 'Rider',
+        color: row?.color ?? pres?.color ?? '#2f7dff',
+        isLeader: row?.is_leader ?? pres?.isLeader ?? false,
         lat,
         lng,
-        heading: pingNewer ? ping!.h ?? null : row.heading,
-        speed: pingNewer ? ping!.s ?? null : row.speed,
-        lastSeen: online.has(row.id) ? Math.max(lastSeen, Date.now() - 1) : lastSeen,
-        isSelf: row.id === session.participantId,
-      };
-    });
-  }, [rows, pings, online, session.participantId]);
+        heading: pingNewer ? ping!.h ?? null : row?.heading ?? null,
+        speed: pingNewer ? ping!.s ?? null : row?.speed ?? null,
+        // Presence means actively connected → treat as fresh.
+        lastSeen: presence[id] ? Math.max(lastSeen, Date.now() - 1) : lastSeen,
+        isSelf: id === session.participantId,
+      });
+    }
+    return list;
+  }, [rows, pings, presence, session.participantId]);
 
   const reconnect = useCallback(() => {
     setConn('reconnecting');
     void hydrate();
   }, [hydrate]);
 
-  return { ride, participants, conn, kicked, reconnect };
+  /** Manual refresh: re-fetch roster + last-known positions straight from the DB
+   *  (bypasses realtime push). Returns the promise so callers can show a spinner. */
+  const refresh = useCallback(() => hydrate(), [hydrate]);
+
+  return { ride, participants, conn, kicked, reconnect, refresh };
 }

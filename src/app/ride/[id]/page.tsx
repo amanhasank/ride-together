@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { isSupabaseConfigured } from '@/lib/supabase';
-import { getRide } from '@/lib/ride';
+import { getRide, claimLeader } from '@/lib/ride';
 import { loadSession, type RideSession } from '@/lib/session';
 import type { Ride } from '@/lib/types';
 import { ConfigNeeded } from '@/components/ConfigNeeded';
@@ -34,6 +34,24 @@ export default function RidePage() {
         if (!active) return;
         if (!r) return setState('notfound');
         setRide(r);
+
+        // Private leader link (?leader=<token>) → reclaim leadership on any device.
+        const leaderParam = new URLSearchParams(window.location.search).get('leader');
+        if (leaderParam) {
+          try {
+            const ls = await claimLeader(rideId, leaderParam);
+            // Strip the secret token from the address bar / history.
+            window.history.replaceState({}, '', `/ride/${rideId}`);
+            if (!active) return;
+            setSession(ls);
+            setState('room');
+            return;
+          } catch {
+            // Invalid token → fall through to normal session/join flow.
+            window.history.replaceState({}, '', `/ride/${rideId}`);
+          }
+        }
+
         const s = loadSession(rideId);
         if (s) {
           setSession(s);

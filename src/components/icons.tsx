@@ -103,6 +103,11 @@ export const Trash = (p: SVGProps<SVGSVGElement>) => (
     <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
   </svg>
 );
+export const Refresh = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6" />
+  </svg>
+);
 export const Gauge = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}>
     <path d="M12 14 8 9m13 5a9 9 0 1 0-18 0" />

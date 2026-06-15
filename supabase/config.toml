@@ -12,3 +12,6 @@ verify_jwt = false
 
 [functions.ride-action]
 verify_jwt = false
+
+[functions.claim-leader]
+verify_jwt = false
